@@ -30,7 +30,6 @@ github_username:  ianlukekane
 
 show_excerpts: true # set to true to show excerpts on the homepage
 paginate: 5
-paginate_path: "/articles/page:num/"
 
 # Build settings
 theme: minima
