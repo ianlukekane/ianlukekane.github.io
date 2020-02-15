@@ -29,12 +29,14 @@ twitter_username: ianlukekane
 github_username:  ianlukekane
 
 show_excerpts: true # set to true to show excerpts on the homepage
-paginate: 10
+paginate: 5
+paginate_path: "/articles/page:num/"
 
 # Build settings
 theme: minima
 plugins:
   - jekyll-feed
+  - jekyll-paginate
 
 # Exclude from processing.
 # The following items will not be processed, by default.
