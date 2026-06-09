@@ -19,8 +19,7 @@
   --gy:#4B5563;--gy2:rgba(75,85,99,.18);
   --t:#EEF2F7;--t2:#7E8894;--t3:#2E3540;
   --r:14px;--rs:9px;
-  --fd:'Barlow Condensed',system-ui,-apple-system,sans-serif;--fb:'DM Sans',system-ui,-apple-system,sans-serif;
-  --si:env(safe-area-inset-top,59px);--sb:env(safe-area-inset-bottom,34px)
+  --fd:'Barlow Condensed',system-ui,-apple-system,sans-serif;--fb:'DM Sans',system-ui,-apple-system,sans-serif
 }
 html,body{height:100%;background:var(--bg);color:var(--t);font-family:var(--fb);overflow:hidden;font-size:16px;overscroll-behavior:none;user-select:none;-webkit-user-select:none}
 #app{height:100%;max-width:430px;margin:0 auto;position:relative;overflow:hidden}
@@ -278,7 +277,7 @@ function renderWeek() {
   const weekLabel = `${MONTHS[mon.getMonth()]} ${mon.getDate()} – ${MONTHS[sunday.getMonth()]} ${sunday.getDate()}`;
 
   document.getElementById('vw').innerHTML = `
-<div style="padding:calc(env(safe-area-inset-top,59px)+14px) 16px 10px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
+<div style="padding:max(73px,calc(env(safe-area-inset-top,0px) + 14px)) 16px 10px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
   <div style="font-family:var(--fd);font-size:32px;font-weight:700;letter-spacing:.04em;color:var(--t)">LIFT LOG</div>
   <div style="display:flex;align-items:center;gap:10px">
     <div onclick="prevWeek()" style="width:32px;height:32px;border-radius:50%;background:var(--s0);display:flex;align-items:center;justify-content:center;border:1.5px solid var(--bd);font-size:18px;color:var(--t2)">‹</div>
@@ -405,7 +404,7 @@ ${isDone ? '✓ Session complete' : 'Mark session done'}
 
   const dateDisp = fmtDate(new Date(openDate + 'T12:00:00'));
   document.getElementById('vo').innerHTML = `
-<div style="padding:calc(env(safe-area-inset-top,59px)+14px) 16px 12px;display:flex;align-items:center;gap:12px;flex-shrink:0;background:var(--bg);border-bottom:1px solid var(--bd)">
+<div style="padding:max(73px,calc(env(safe-area-inset-top,0px) + 14px)) 16px 12px;display:flex;align-items:center;gap:12px;flex-shrink:0;background:var(--bg);border-bottom:1px solid var(--bd)">
   <div onclick="closeWorkout()" style="width:36px;height:36px;border-radius:50%;background:var(--s1);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:22px;color:var(--t)">‹</div>
   <div style="flex:1;min-width:0">
     <div style="font-family:var(--fd);font-size:26px;font-weight:700;letter-spacing:.03em;color:var(--t);line-height:1">${plan.name.toUpperCase()}</div>
@@ -493,25 +492,36 @@ function reRenderWorkout() {
 }
 
 // ── INIT ──────────────────────────────────────────────────────────────────────
-// Generate a canvas-based apple-touch-icon for the home screen tile.
+// Generate a Tabler "barbell" apple-touch-icon for the home screen tile.
+// Source: https://tabler.io/icons — rasterized to PNG since apple-touch-icon
+// support for SVG is inconsistent across iOS versions.
 (function generateIcon() {
   try {
-    const canvas = document.createElement('canvas');
-    canvas.width = canvas.height = 512;
-    const ctx = canvas.getContext('2d');
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#FF6B35" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+<path d="M2 12h1" />
+<path d="M6 8h-2a1 1 0 0 0 -1 1v6a1 1 0 0 0 1 1h2" />
+<path d="M6 7v10a1 1 0 0 0 1 1h1a1 1 0 0 0 1 -1v-10a1 1 0 0 0 -1 -1h-1a1 1 0 0 0 -1 1" />
+<path d="M9 12h6" />
+<path d="M15 7v10a1 1 0 0 0 1 1h1a1 1 0 0 0 1 -1v-10a1 1 0 0 0 -1 -1h-1a1 1 0 0 0 -1 1" />
+<path d="M18 8h2a1 1 0 0 1 1 1v6a1 1 0 0 1 -1 1h-2" />
+<path d="M22 12h-1" />
+</svg>`;
+    const canvas  = document.createElement('canvas');
+    canvas.width  = canvas.height = 512;
+    const ctx     = canvas.getContext('2d');
     ctx.fillStyle = '#0C0F14';
     ctx.fillRect(0, 0, 512, 512);
-    ctx.fillStyle = '#FF6B35';
-    ctx.beginPath(); ctx.ellipse(108, 256, 76, 110, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.ellipse(404, 256, 76, 110, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.fillRect(184, 228, 144, 56);
-    ctx.fillStyle = '#CC4A20';
-    ctx.fillRect(180, 224, 22, 64);
-    ctx.fillRect(310, 224, 22, 64);
-    const link = document.createElement('link');
-    link.rel  = 'apple-touch-icon';
-    link.href = canvas.toDataURL('image/png');
-    document.head.appendChild(link);
+    const img = new Image();
+    img.onload = () => {
+      // Inset the glyph so it isn't clipped by iOS's rounded-corner mask.
+      const inset = 96;
+      ctx.drawImage(img, inset, inset, 512 - 2 * inset, 512 - 2 * inset);
+      const link = document.createElement('link');
+      link.rel  = 'apple-touch-icon';
+      link.href = canvas.toDataURL('image/png');
+      document.head.appendChild(link);
+    };
+    img.src = 'data:image/svg+xml,' + encodeURIComponent(svg);
   } catch {}
 })();
 
