@@ -7,6 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Lift Log">
 <meta name="theme-color" content="#0C0F14">
+<meta name="robots" content="noindex,nofollow">
 <title>Lift Log</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
 <style>
@@ -33,12 +34,33 @@ input,select,textarea{user-select:text;-webkit-user-select:text}
 input[type=number]{-webkit-appearance:none;-moz-appearance:textfield;appearance:none}
 input[type=number]::-webkit-outer-spin-button,
 input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.sheet{position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:100;align-items:flex-end;justify-content:center;display:none}
+.sheet.open{display:flex;animation:sheetFade .2s ease-out}
+.sheet-card{background:var(--bg);width:100%;max-width:430px;border-radius:20px 20px 0 0;padding:20px 16px calc(env(safe-area-inset-bottom,34px) + 20px);border-top:1.5px solid var(--bd);animation:sheetSlide .25s ease-out}
+@keyframes sheetFade{from{opacity:0}to{opacity:1}}
+@keyframes sheetSlide{from{transform:translateY(40px)}to{transform:translateY(0)}}
 </style>
 </head>
 <body>
 <div id="app">
   <div id="vw" class="view"></div>
   <div id="vo" class="view off"></div>
+</div>
+<div id="sheet" class="sheet" onclick="closeBackupSheet()">
+  <div class="sheet-card" onclick="event.stopPropagation()">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <div style="font-family:var(--fd);font-size:22px;font-weight:700;letter-spacing:.04em;color:var(--t)">BACKUP &amp; RESTORE</div>
+      <div onclick="closeBackupSheet()" style="width:32px;height:32px;border-radius:50%;background:var(--s1);display:flex;align-items:center;justify-content:center;font-size:18px;color:var(--t2);flex-shrink:0">×</div>
+    </div>
+    <div onclick="exportData()" style="background:var(--s0);border-radius:var(--r);padding:16px;border:1.5px solid var(--bd);margin-bottom:10px">
+      <div style="font-size:15px;font-weight:500;color:var(--t);margin-bottom:4px">Export backup</div>
+      <div style="font-size:12px;color:var(--t2);line-height:1.5">Saves your logged workouts as a JSON file. Use the iOS share sheet to send it to iCloud Drive, email, or another app.</div>
+    </div>
+    <div onclick="importData()" style="background:var(--s0);border-radius:var(--r);padding:16px;border:1.5px solid var(--bd)">
+      <div style="font-size:15px;font-weight:500;color:var(--t);margin-bottom:4px">Import backup</div>
+      <div style="font-size:12px;color:var(--t2);line-height:1.5">Replaces current data with a previously exported JSON file. Cannot be undone.</div>
+    </div>
+  </div>
 </div>
 <script>
 // ── PLAN DATA ────────────────────────────────────────────────────────────────
@@ -303,6 +325,9 @@ function renderWeek() {
 <div class="sl" style="margin-bottom:10px">This week</div>
 ${dayRows}
 </div>
+<div style="text-align:center;padding:20px 16px 0">
+  <span onclick="openBackupSheet()" style="display:inline-block;font-size:12px;color:var(--t2);padding:8px 16px;background:var(--s0);border-radius:50px;border:1.5px solid var(--bd)">Backup &amp; restore</span>
+</div>
 <div style="height:calc(env(safe-area-inset-bottom,34px)+24px)"></div>`;
 }
 
@@ -489,6 +514,65 @@ function reRenderWorkout() {
   const scrollTop = el.scrollTop;
   renderWorkout();
   requestAnimationFrame(() => { el.scrollTop = scrollTop; });
+}
+
+// ── BACKUP / RESTORE ──────────────────────────────────────────────────────────
+function openBackupSheet()  { document.getElementById('sheet').classList.add('open'); }
+function closeBackupSheet() { document.getElementById('sheet').classList.remove('open'); }
+
+async function exportData() {
+  const backup   = { app: 'Lift Log', version: 1, exportedAt: new Date().toISOString(), data: load() };
+  const json     = JSON.stringify(backup, null, 2);
+  const filename = `lift-log-backup-${toDateKey()}.json`;
+
+  // Prefer the native iOS share sheet — drops straight into Files / iCloud / Mail / etc.
+  try {
+    const file = new File([json], filename, { type: 'application/json' });
+    if (navigator.canShare?.({ files: [file] })) {
+      await navigator.share({ files: [file], title: 'Lift Log backup' });
+      return;
+    }
+  } catch (e) {
+    if (e.name === 'AbortError') return;  // user dismissed the share sheet
+    // any other error: fall through to download
+  }
+
+  // Fallback for browsers without file-share support: trigger a download
+  const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
+  const a   = document.createElement('a');
+  a.href     = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function importData() {
+  const input  = document.createElement('input');
+  input.type   = 'file';
+  input.accept = '.json,application/json';
+  input.onchange = async () => {
+    const file = input.files?.[0];
+    if (!file) return;
+    try {
+      const parsed = JSON.parse(await file.text());
+      if (!parsed?.data || typeof parsed.data !== 'object' || Array.isArray(parsed.data)) {
+        alert("That file doesn't look like a Lift Log backup.");
+        return;
+      }
+      const days = Object.keys(parsed.data).length;
+      const when = parsed.exportedAt ? new Date(parsed.exportedAt).toLocaleDateString() : 'the backup file';
+      if (!confirm(`Restore ${days} day${days === 1 ? '' : 's'} of data from ${when}? This replaces your current data.`)) return;
+      save(parsed.data);
+      closeBackupSheet();
+      // If a workout was open it would show stale data — closeWorkout() handles re-rendering for us.
+      openDate ? closeWorkout() : renderWeek();
+    } catch (err) {
+      alert("Couldn't read that file: " + err.message);
+    }
+  };
+  input.click();
 }
 
 // ── INIT ──────────────────────────────────────────────────────────────────────

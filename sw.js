@@ -4,7 +4,7 @@
 // ⚠️  Bump CACHE on every deploy of lift_log.html (v1 → v2 → v3 …).
 //     The browser only notices a new SW when sw.js bytes change, and changing
 //     the version string is the standard way to force a re-install + cache refresh.
-const CACHE = 'liftlog-v3';
+const CACHE = 'liftlog-v4';
 
 // ── INSTALL: pre-cache the app HTML ─────────────────────────────────────────
 self.addEventListener('install', e => {
