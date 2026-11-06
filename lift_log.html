@@ -187,7 +187,10 @@ function ensureSession(data, dateKey, workoutKey) {
         .sort(([a], [b]) => b.localeCompare(a))[0]?.[1]?.[workoutKey]?.sets || {};
       plan.exercises.forEach(ex => {
         const prev = prevSets[ex.id] || [];
-        sets[ex.id] = Array.from({ length: ex.numSets }, (_, i) => ({
+        // Preserve extra sets from the most recent session — if you added a 4th set
+        // last week it sticks around this week. The planned numSets is the floor.
+        const count = Math.max(ex.numSets, prev.length);
+        sets[ex.id] = Array.from({ length: count }, (_, i) => ({
           w: prev[i]?.w || '', r: prev[i]?.r || '', done: false,
         }));
       });
@@ -219,6 +222,26 @@ function markWorkoutDone(dateKey, workoutKey) {
   if (!data[dateKey]) data[dateKey] = {};
   if (!data[dateKey][workoutKey]) data[dateKey][workoutKey] = {};
   data[dateKey][workoutKey].done = true;
+  save(data);
+}
+
+// Append an empty set to the exercise. No upper bound — the user asked for
+// "a 4th or more sets" as a progression lever.
+function appendSet(dateKey, workoutKey, exId) {
+  const data = load();
+  const sets = data[dateKey]?.[workoutKey]?.sets?.[exId];
+  if (!sets) return;
+  sets.push({ w: '', r: '', done: false });
+  save(data);
+}
+
+// Drop the last set, but only above the plan's baseline count — removing a
+// planned set would silently discard the structure of the workout.
+function popSet(dateKey, workoutKey, exId, minCount) {
+  const data = load();
+  const sets = data[dateKey]?.[workoutKey]?.sets?.[exId];
+  if (!sets || sets.length <= minCount) return;
+  sets.pop();
   save(data);
 }
 
@@ -370,10 +393,10 @@ function renderWorkout() {
     <div style="font-size:15px;font-weight:500;color:var(--t);line-height:1.2">${ex.name}</div>
     <div style="font-size:12px;color:var(--t2);margin-top:2px">${ex.note}</div>
     <div style="display:flex;align-items:center;gap:10px;margin-top:5px;flex-wrap:wrap">
-      <span style="font-size:12px;color:var(--t2)">${ex.numSets} sets × ${ex.target}</span>
+      <span style="font-size:12px;color:var(--t2)">${sets.length} sets × ${ex.target}${sets.length > ex.numSets ? ` <span style="color:var(--a)">+${sets.length - ex.numSets}</span>` : ''}</span>
       <span style="font-size:11px;color:${lastSets?.[0]?.w ? 'var(--a)' : 'var(--t3)'}">${prevText}</span>
     </div>
-    <div style="display:flex;gap:4px;margin-top:6px;align-items:center">${pips}<span style="font-size:11px;color:var(--t2);margin-left:4px">${doneCount}/${ex.numSets}</span></div>
+    <div style="display:flex;gap:4px;margin-top:6px;align-items:center">${pips}<span style="font-size:11px;color:var(--t2);margin-left:4px">${doneCount}/${sets.length}</span></div>
   </div>
   <span style="color:var(--t3);font-size:18px;flex-shrink:0;transition:transform .2s;margin-top:1px;${isOpen ? 'transform:rotate(180deg)' : ''}">⌄</span>
 </div>
@@ -445,8 +468,12 @@ function renderSets(ex, sets) {
   sets.forEach((set, i) => {
     const done       = set.done;
     const inputStyle = `background:${done ? 'var(--gn2)' : 'var(--s1)'};border:1.5px solid ${done ? 'rgba(34,197,94,.3)' : 'var(--bd)'};color:${done ? 'var(--gn)' : 'var(--t)'};width:100%;border-radius:var(--rs);font-family:var(--fb);font-size:16px;text-align:center;padding:8px 4px;outline:none`;
+    // Extra sets (beyond the plan's default count) show an orange index so
+    // they're visually distinct from the planned baseline.
+    const isExtra    = i >= ex.numSets;
+    const indexColor = isExtra ? 'var(--a)' : 'var(--t2)';
     html += `<div style="display:grid;grid-template-columns:26px 1fr 1fr 44px;gap:8px;align-items:center;padding:7px 0;border-bottom:${i < sets.length - 1 ? '1px solid var(--bd)' : 'none'}">
-<span style="font-size:12px;color:var(--t2);text-align:center">${i + 1}</span>
+<span style="font-size:12px;color:${indexColor};text-align:center;font-weight:${isExtra ? '600' : '400'}">${i + 1}</span>
 <div>
   <div style="font-size:10px;color:var(--t3);text-align:center;margin-bottom:3px">lbs</div>
   <input type="number" inputmode="decimal" min="0" step="2.5" placeholder="—" value="${set.w || ''}"
@@ -462,6 +489,14 @@ function renderSets(ex, sets) {
 </div>
 </div>`;
   });
+
+  // Add / remove set controls. Remove is only live above the plan's floor.
+  const canRemove = sets.length > ex.numSets;
+  html += `<div style="display:flex;gap:8px;margin-top:10px">
+  <div onclick="addSetRow('${ex.id}')" style="flex:1;padding:10px;background:var(--s1);border:1.5px solid var(--bd);border-radius:var(--rs);text-align:center;font-size:13px;color:var(--t);font-weight:500">+ Add set</div>
+  <div ${canRemove ? `onclick="removeSetRow('${ex.id}',${ex.numSets})"` : ''} style="padding:10px 16px;background:${canRemove ? 'var(--s1)' : 'transparent'};border:1.5px solid ${canRemove ? 'var(--bd)' : 'transparent'};border-radius:var(--rs);text-align:center;font-size:13px;color:${canRemove ? 'var(--t2)' : 'transparent'};pointer-events:${canRemove ? 'auto' : 'none'}">− Remove</div>
+</div>`;
+
   return html + '</div>';
 }
 
@@ -501,6 +536,21 @@ function onRepsInput(ev, exId, setIndex) {
 
 function toggleSetDone(exId, setIndex) {
   toggleSetCompleted(openDate, PLAN[openDay].key, exId, setIndex);
+  reRenderWorkout();
+}
+
+function addSetRow(exId) {
+  appendSet(openDate, PLAN[openDay].key, exId);
+  reRenderWorkout();
+}
+
+function removeSetRow(exId, minCount) {
+  // Warn if the last set has data that would be lost.
+  const data = load();
+  const sets = data[openDate]?.[PLAN[openDay].key]?.sets?.[exId];
+  const last = sets?.[sets.length - 1];
+  if (last && (last.w || last.r) && !confirm('Remove this set? Its weight and reps will be lost.')) return;
+  popSet(openDate, PLAN[openDay].key, exId, minCount);
   reRenderWorkout();
 }
 
@@ -593,7 +643,7 @@ function importData() {
     const canvas  = document.createElement('canvas');
     canvas.width  = canvas.height = 512;
     const ctx     = canvas.getContext('2d');
-    ctx.fillStyle = '#0C0F14';
+    ctx.fillStyle = '#1C1F26';
     ctx.fillRect(0, 0, 512, 512);
     const img = new Image();
     img.onload = () => {
